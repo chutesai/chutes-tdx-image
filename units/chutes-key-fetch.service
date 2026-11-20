@@ -1,0 +1,25 @@
+[Unit]
+Description=Chutes key window: fetch the app key through the key relay, then map the app partition
+Documentation=https://github.com/chutesai/chutes-tdx-image
+# A synchronized clock first (systemd-time-wait-sync, enabled in the image): the key service's
+# certificate is checked against it, and an attempt that fails on time spends a window connection.
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+Before=chutes-unlock.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Retries until it has the key (the window opens a few seconds after the VM starts). The key
+# goes to cryptsetup's standard input only.
+ExecStart=/usr/local/bin/chutes-key-fetch --config /etc/chutes-key-fetch.json --unlock
+TimeoutStartSec=infinity
+LimitCORE=0
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

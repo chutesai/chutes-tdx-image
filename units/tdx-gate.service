@@ -1,0 +1,77 @@
+# tdx-gate: attestation and E2E v2 in front of the application (chutesai/chutes-tdx-gate).
+# Install the binary you built at /usr/local/bin/tdx-gate and the configuration at
+# /etc/tdx-gate/config.json (chutes.tdx-gate-config.v1, listen 0.0.0.0:8080).
+#
+# The key: one ML-KEM key pair per boot, in memory only (no core dumps, no swap in the image; the
+# only file the gate writes is configfs-tsm's inblob). On its first start the gate hands the key's
+# seed, in a sealed memfd, to systemd's file descriptor store, with a second memfd holding the
+# highest request timestamp it admitted (written before each admission that raises it). When the
+# gate fails and is restarted (an out-of-memory kill included) it gets both back: the same key, so
+# the binding the validator recorded still holds, and it refuses every request stamped at or below
+# that mark or before its restart plus 60 s (the previous process's nonces are gone), whatever the
+# clock did across the restart. A reboot loses the store: the key changes and the validator
+# replaces the VM.
+#
+# Memory: the gate holds at most --memory-budget bytes for all in-flight requests together (each
+# reserves its body, plaintext, parse and answer before allocating them; beyond it, e2e_v2_busy
+# with Retry-After). MemoryMax bounds the whole process; GOMEMLIMIT makes the Go runtime collect
+# well before it.
+
+[Unit]
+Description=Chutes TDX gate (attestation and E2E v2 in front of the application)
+Wants=network-online.target
+After=network-online.target
+# The application unit (app.service in the image template) unlocks after the key window;
+# the gate does not need it to start: /health stays 503 until the application answers.
+# At most 5 starts in 5 minutes; then the unit stays failed, /health fails and the VM is replaced.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/tdx-gate serve --config /etc/tdx-gate/config.json --memory-budget 536870912
+Restart=on-failure
+RestartSec=1
+NotifyAccess=main
+FileDescriptorStoreMax=2
+FileDescriptorStorePreserve=restart
+MemoryMax=1G
+MemorySwapMax=0
+Environment=GOMEMLIMIT=800MiB
+
+# Root uid without any capability: enough to mkdir in the root-owned configfs-tsm report directory
+# (owner permission), nothing more. Port 8080 needs no capability.
+User=root
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+LimitCORE=0
+UMask=0077
+
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ReadWritePaths=/sys/kernel/config/tsm/report
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

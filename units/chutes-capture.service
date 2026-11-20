@@ -1,0 +1,12 @@
+[Unit]
+Description=Chutes platform capture (capture variant only): print the quote and CCEL on the serial console
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/chutes-capture
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

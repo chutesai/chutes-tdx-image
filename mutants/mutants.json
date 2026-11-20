@@ -1,0 +1,688 @@
+{
+ "repository": "chutesai/chutes-tdx-image",
+ "group": "the key fetch, the reference key service and the template's checks",
+ "mutants": [
+  {
+   "id": "I01",
+   "check": "the key fetch's REPORTDATA without endpoint_id",
+   "edits": [
+    {
+     "file": "keyfetch/keyfetch.go",
+     "old": "\trd := keyrel.ReportData(f.Config.Tag, nonce, exporter, f.Identity.EndpointID)",
+     "new": "\trd := keyrel.ReportData(f.Config.Tag, nonce, exporter, \"\")"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I02",
+   "check": "the reference key service not checking its endpoint list",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tif !s.endpoints[req.EndpointID] {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I03",
+   "check": "the reference key service not requiring the provenance row",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "var RequiredRows = []string{\"quote\", \"binding\", \"platform\", \"measurements\", \"provider_root\"}",
+     "new": "var RequiredRows = []string{\"quote\", \"binding\", \"platform\", \"measurements\"}"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I04",
+   "check": "the key service's nonce not single-use (not deleted at use)",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tdelete(s.nonces, exporter)\n\ts.mu.Unlock()",
+     "new": "\ts.mu.Unlock()"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I05",
+   "check": "the key service's nonce not bound to its TLS connection",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\ts.nonces[exporter] = &issued{nonce: nonce, at: now}",
+     "new": "\ts.nonces[[32]byte{}] = &issued{nonce: nonce, at: now}"
+    },
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tn := s.nonces[exporter]",
+     "new": "\tn := s.nonces[[32]byte{}]"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I06",
+   "check": "the key service's project pin removed",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tif inst.ProjectNumber != s.cfg.Verify.GCEProject {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I07",
+   "check": "the key service's REPORTDATA without the connection's exporter",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\trd := keyrel.ReportData(s.cfg.Tag, nonce, exporter, req.EndpointID)",
+     "new": "\trd := keyrel.ReportData(s.cfg.Tag, nonce, [32]byte{}, req.EndpointID)"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I08",
+   "check": "the gate's /attest tag accepted as a key-release tag (domain separation)",
+   "edits": [
+    {
+     "file": "internal/keyrel/keyrel.go",
+     "old": "\tif strings.HasPrefix(tag, GateTag) {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I09",
+   "check": "appseal's tweak not the sector number (not dm-crypt plain64)",
+   "edits": [
+    {
+     "file": "tools/appseal/main.go",
+     "old": "\t\t\tc.Encrypt(s, s, uint64(n))",
+     "new": "\t\t\tc.Encrypt(s, s, uint64(0))"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I10",
+   "check": "the key fetch trusting any CA (TLS not pinned)",
+   "edits": [
+    {
+     "file": "keyfetch/keyfetch.go",
+     "old": "\t\tRootCAs:    pool,",
+     "new": "\t\tRootCAs:    pool, InsecureSkipVerify: true,"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I11",
+   "check": "pehash not excluding the checksum",
+   "edits": [
+    {
+     "file": "tools/pehash/main.go",
+     "old": "\th.Write(data[checksum+4 : certEntry])",
+     "new": "\th.Write(data[checksum : certEntry])"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I12",
+   "check": "the capture REPORTDATA's tag changed",
+   "edits": [
+    {
+     "file": "sample-app/cmd/chutes-capture/main.go",
+     "old": "\th.Write([]byte(Tag))",
+     "new": "\th.Write([]byte(\"chutes-tdx-endpoint-attest-v1\"))"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I13",
+   "check": "the sample app healthy before its delay (the key window closes at once)",
+   "edits": [
+    {
+     "file": "sample-app/cmd/sample-app/main.go",
+     "old": "\t\tif !healthy.Load() && time.Since(started) >= *delay {",
+     "new": "\t\tif !healthy.Load() && time.Since(started) >= 0*(*delay) {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I14",
+   "check": "a key-release tag with a NUL byte accepted",
+   "edits": [
+    {
+     "file": "internal/keyrel/keyrel.go",
+     "old": "\tif strings.IndexByte(tag, 0) >= 0 {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I15",
+   "check": "a key-release tag starting with the gate's tag accepted (only the exact tag refused)",
+   "edits": [
+    {
+     "file": "internal/keyrel/keyrel.go",
+     "old": "\tif strings.HasPrefix(tag, GateTag) {",
+     "new": "\tif tag == GateTag {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I16",
+   "check": "the released key not checked against the image's kcv",
+   "edits": [
+    {
+     "file": "keyfetch/keyfetch.go",
+     "old": "\tif !appkey.Check(key, kcv) {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I17",
+   "check": "the key fetch's app_context and app_kcv not required",
+   "edits": [
+    {
+     "file": "keyfetch/keyfetch.go",
+     "old": "\tif !hex64.MatchString(c.AppContext) || !hex64.MatchString(c.AppKCV) {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I18",
+   "check": "a key-window attempt shorter than the service's verification",
+   "edits": [
+    {
+     "file": "keyfetch/keyfetch.go",
+     "old": "const AttemptTimeout = 180 * time.Second",
+     "new": "const AttemptTimeout = 60 * time.Second"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I19",
+   "check": "expired nonces kept",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\t\tif now.Sub(n.at) > ttl {",
+     "new": "\t\tif now.Sub(n.at) > ttl && false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I20",
+   "check": "no cap on outstanding nonces",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tif _, replacing := s.nonces[exporter]; !replacing && len(s.nonces) >= MaxNonces {",
+     "new": "\tif false {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I21",
+   "check": "no bound on concurrent verifications",
+   "edits": [
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\tselect { // a verify-quote slot, for as long as the connection lasts\n\tcase s.verifies <- struct{}{}:\n\tcase <-r.Context().Done():\n\t\trefuse(w, http.StatusServiceUnavailable, \"verifier_busy\")\n\t\treturn\n\t}\n",
+     "new": ""
+    },
+    {
+     "file": "keyservice/keyservice.go",
+     "old": "\t<-s.verifies\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I22",
+   "check": "the app partition sealed under the owner key itself",
+   "edits": [
+    {
+     "file": "tools/appseal/main.go",
+     "old": "\tif err := Seal(key, data, false); err != nil {",
+     "new": "\tif err := Seal(released, data, false); err != nil {"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I23",
+   "check": "the data key's context not bound to the app's content",
+   "edits": [
+    {
+     "file": "internal/appkey/appkey.go",
+     "old": "\tm.Write(appDigest[:])\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I24",
+   "check": "efi=noruntime dropped (EFI variables reach systemd: SystemdOptions)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "systemd.gpt_auto=no efi=noruntime systemd",
+     "new": "systemd.gpt_auto=no systemd"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I25",
+   "check": "systemd.import_credentials=no dropped",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "efi=noruntime systemd.import_credentials=no random",
+     "new": "efi=noruntime random"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I26",
+   "check": "systemd.gpt_auto=no dropped (partition discovery from EFI variables)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "rootfstype=erofs systemd.gpt_auto=no efi",
+     "new": "rootfstype=erofs efi"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I27",
+   "check": "random.trust_bootloader=off dropped",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "systemd.import_credentials=no random.trust_bootloader=off\n",
+     "new": "systemd.import_credentials=no\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I28",
+   "check": "noble's stub (255, vTPM only) installed in the image",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "        linux-image-virtual-hwe-24.04\n",
+     "new": "        linux-image-virtual-hwe-24.04\n        systemd-boot-efi\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I29",
+   "check": "any stub version accepted",
+   "edits": [
+    {
+     "file": "build/build.sh",
+     "old": "case \"$stub_version\" in 25[6-9]*|2[6-9][0-9]*) ;; *) echo",
+     "new": "case \"$stub_version\" in *) ;; esac; case x in y) echo"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I30",
+   "check": "the root does not mask debug-shell",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.postinst.chroot",
+     "old": "            debug-shell.service emergency.service rescue.service; do\n    systemctl mask \"$unit\"\n",
+     "new": "            emergency.service rescue.service; do\n    systemctl mask \"$unit\"\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I31",
+   "check": "the root's lock not checked",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.postinst.chroot",
+     "old": "case \"$(awk -F: '$1 == \"root\" { print $2 }' /etc/shadow)\" in",
+     "new": "case \"x\" in"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I32",
+   "check": "the initrd does not mask emergency",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.images/initrd/mkosi.postinst.chroot",
+     "old": "debug-shell.service emergency.service rescue.service; do",
+     "new": "debug-shell.service rescue.service; do"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I33",
+   "check": "the image boots mkosi's unmasked default initrd",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "Initrds=%O/initrd.cpio.zst\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I34",
+   "check": "the stub kept in the root partition",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.repart/10-root.conf",
+     "old": "ExcludeFiles=/usr/lib/systemd/boot/\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I35",
+   "check": "the key fetch not waiting for a synchronized clock",
+   "edits": [
+    {
+     "file": "units/chutes-key-fetch.service",
+     "old": "After=network-online.target time-sync.target",
+     "new": "After=network-online.target"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I36",
+   "check": "a downloaded tools tree allowed",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "ToolsTree=\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I37",
+   "check": "the gate unit not restarted on failure",
+   "edits": [
+    {
+     "file": "units/tdx-gate.service",
+     "old": "Restart=on-failure\n",
+     "new": "Restart=no\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I38",
+   "check": "the build not checking the built initrd's masks",
+   "edits": [
+    {
+     "file": "build/build.sh",
+     "old": "for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \\\n            debug-shell.service emergency.service rescue.service; do\n    [ \"$(readlink \"$W/initrd-check/etc/systemd/system/$unit\")\" = /dev/null ] || { echo \"the initrd does not mask $unit\" >&2; exit 1; }\ndone\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I39",
+   "check": "the ESP formatted with 4096-byte sectors (repart's default): no EDK2 firmware mounts it",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "SectorSize=512\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I40",
+   "check": "the build not checking the ESP's sector size",
+   "edits": [
+    {
+     "file": "build/build.sh",
+     "old": "if entry[:16] != bytes.fromhex(\"28732ac11ff8d211ba4b00a0c93ec93b\") or struct.unpack_from(\"<H\", boot, 11)[0] != 512:\n    sys.exit(\"the first partition is not an ESP with 512-byte FAT sectors\")\n",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I41",
+   "check": "erofs left out of the initrd (the root cannot be mounted)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "        ^fs/erofs/\nRemoveFiles=",
+     "new": "        /fs/erofs/\nRemoveFiles="
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I42",
+   "check": "the guest passing its key to cryptsetup as \"-\" (plain mode hashes it: the partition opens to garbage)",
+   "edits": [
+    {
+     "file": "keyfetch/cmd/chutes-key-fetch/main.go",
+     "old": "\"--key-file\", \"/dev/stdin\", \"--keyfile-size\", \"64\",",
+     "new": "\"--key-file\", \"-\","
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  }
+ ]
+}
