@@ -149,8 +149,36 @@ func TestKeyFetchAfterTimeSync(t *testing.T) {
 // veritysetup open after the key arrived.
 func TestKeyFetchMapsWithoutUdev(t *testing.T) {
 	unit := read(t, "units", "chutes-key-fetch.service")
-	if !strings.Contains(unit, "\nEnvironment=DM_DISABLE_UDEV=1\n") {
-		t.Error("chutes-key-fetch.service does not set DM_DISABLE_UDEV=1")
+	if !strings.Contains(unitSection(unit, "Service"), "\nEnvironment=DM_DISABLE_UDEV=1\n") {
+		t.Error("chutes-key-fetch.service does not set DM_DISABLE_UDEV=1 in [Service]")
+	}
+}
+
+// unitSection is the body of one [Name] section of a systemd unit (systemd ignores Environment= elsewhere).
+func unitSection(unit, name string) string {
+	start := strings.Index(unit, "\n["+name+"]\n")
+	if strings.HasPrefix(unit, "["+name+"]\n") {
+		start = -1
+	} else if start < 0 {
+		return ""
+	}
+	body := unit[start+len(name)+3:]
+	if end := strings.Index(body, "\n["); end >= 0 {
+		body = body[:end+1]
+	}
+	return body
+}
+
+func TestUnitSection(t *testing.T) {
+	unit := "[Unit]\nEnvironment=A=1\n\n[Service]\nType=oneshot\nEnvironment=B=1\n\n[Install]\nWantedBy=x\n"
+	if got := unitSection(unit, "Service"); !strings.Contains(got, "\nEnvironment=B=1\n") || strings.Contains(got, "A=1") || strings.Contains(got, "WantedBy") {
+		t.Errorf("unitSection(Service) = %q", got)
+	}
+	if got := unitSection(unit, "Unit"); !strings.Contains(got, "\nEnvironment=A=1\n") || strings.Contains(got, "B=1") {
+		t.Errorf("unitSection(Unit) = %q", got)
+	}
+	if unitSection(unit, "Timer") != "" {
+		t.Error("a missing section is not empty")
 	}
 }
 
