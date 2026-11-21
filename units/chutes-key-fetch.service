@@ -12,6 +12,10 @@ Type=oneshot
 RemainAfterExit=yes
 # Retries until it has the key (the window opens a few seconds after the VM starts). The key
 # goes to cryptsetup's standard input only.
+# veritysetup and cryptsetup (libdevmapper) wait for udev to confirm each new device unless told
+# not to; the image carries no device-mapper udev rules, so that confirmation never comes and the
+# unlock would hang after the key arrived. libdevmapper creates the /dev/mapper nodes itself.
+Environment=DM_DISABLE_UDEV=1
 ExecStart=/usr/local/bin/chutes-key-fetch --config /etc/chutes-key-fetch.json --unlock
 TimeoutStartSec=infinity
 LimitCORE=0

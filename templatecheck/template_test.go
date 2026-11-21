@@ -144,6 +144,16 @@ func TestKeyFetchAfterTimeSync(t *testing.T) {
 	}
 }
 
+// The unlock maps the app partition without udev's confirmation: the image has no device-mapper
+// udev rules, so libdevmapper would wait for that confirmation forever and the boot would hang in
+// veritysetup open after the key arrived.
+func TestKeyFetchMapsWithoutUdev(t *testing.T) {
+	unit := read(t, "units", "chutes-key-fetch.service")
+	if !strings.Contains(unit, "\nEnvironment=DM_DISABLE_UDEV=1\n") {
+		t.Error("chutes-key-fetch.service does not set DM_DISABLE_UDEV=1")
+	}
+}
+
 // The image's gate unit restarts the gate with its key (the fd store) and bounds its memory.
 func TestGateUnit(t *testing.T) {
 	unit := read(t, "units", "tdx-gate.service")
