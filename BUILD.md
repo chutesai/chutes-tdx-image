@@ -87,7 +87,9 @@ chutes-tdx-measure sign --key key.pem m.json -o m.json.sig
 
 `predict` models RTMR1 and RTMR2 from your archive. On GCP, RTMR2 holds systemd-stub's section
 measurements (the image's stub, systemd 259), which the stub makes through the firmware's CC
-measurement protocol.
+measurement protocol. With Secure Boot off, systemd-stub 258 and later map the kernel themselves, so
+RTMR1 holds the UKI's event and no kernel event: use a `chutes-tdx-measure` whose `predict` models
+that (its `rtmr1.model` says the stub maps its kernel itself).
 
 A capture of a test boot (`chutes-tdx-measure capture --nonce <nonce>`, which verifies the quote
 with Intel DCAP and requires it to carry your nonce) confirms the prediction, but it is not a
