@@ -15,7 +15,7 @@ SOURCE_DATE_EPOCH := 1794700800
 GATE_REPO ?= ../chutes-tdx-gate
 GATE_COMMIT := f1d0da2292e122ad5b2f99c84f49bb81940a4168
 GATE_SHA256 := db8181bc13710d5fa928583b2e0f2d2a1d0a411eab1ebb54d0a346eb06814d0a
-TOOLS_IMAGE := chutes-tdx-image-tools:trixie-20261115
+TOOLS_IMAGE := chutes-tdx-image-tools:trixie-20261115-resolute
 DOCKER ?= docker
 BUILD = $(GO) build -trimpath -buildvcs=false -ldflags="-s -w -buildid="
 RUN = $(DOCKER) run --rm --privileged -e SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) \
@@ -55,7 +55,7 @@ tools-image:
 dev-keys: binaries
 	$(STAGE)/devkeys --dir $(KEYS)
 
-# One variant: out/images/<variant>/{disk.tar.gz, disk.tar.gz.sha256, uki.efi, uki.efi.authenticode, verity.json}.
+# One variant: out/images/<variant>/{disk.tar.gz, disk.tar.gz.sha256, uki.efi, uki.efi.authenticode, verity.json, manifest.json}.
 image: binaries gate tools-image
 	mkdir -p $(OUT)/images $(OUT)/work
 	$(RUN) /src/build/build.sh $(VARIANT)
@@ -74,7 +74,7 @@ repro: binaries gate tools-image
 	rm -rf $(OUT)/repro && mkdir -p $(OUT)/repro
 	for x in a b; do rm -rf $(OUT)/work $(OUT)/images && mkdir -p $(OUT)/work $(OUT)/images && \
 	  $(RUN) /src/build/build.sh $(VARIANT) >/dev/null && cp -a $(OUT)/images/$(VARIANT) $(OUT)/repro/$$x || exit 1; done
-	cd $(OUT)/repro && for f in disk.tar.gz uki.efi verity.json uki.efi.authenticode; do cmp a/$$f b/$$f || exit 1; done
+	cd $(OUT)/repro && for f in disk.tar.gz uki.efi verity.json uki.efi.authenticode manifest.json; do cmp a/$$f b/$$f || exit 1; done
 	sha256sum $(OUT)/repro/a/disk.tar.gz $(OUT)/repro/b/disk.tar.gz
 	@echo "reproducible: A = B"
 

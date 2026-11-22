@@ -2,8 +2,9 @@
 # Runs inside the image after the packages: enable what the variant needs; mask what a Chutes
 # customer VM must not run (getty on the console and tty1, first-boot prompts), and every unit that
 # would run code or mount content from outside the measured image (system and configuration
-# extensions) or give a shell (debug-shell, emergency, rescue: with root locked they still open a
-# shell when the command line asks); no swap. The initrd gets the same masks (mkosi.images/initrd).
+# extensions, including the initrd's own extension units) or give a shell (debug-shell, emergency,
+# rescue and the boot breakpoints: with root locked they still open a shell when the command line
+# asks); no swap. The initrd gets the same masks (mkosi.images/initrd).
 set -eu
 systemctl enable systemd-networkd.service systemd-timesyncd.service
 systemctl enable systemd-networkd-wait-online.service systemd-time-wait-sync.service
@@ -14,15 +15,21 @@ for unit in getty@tty1.service serial-getty@ttyS0.service console-getty.service 
     systemctl mask "$unit" 2>/dev/null || true
 done
 for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \
-            debug-shell.service emergency.service rescue.service; do
+            systemd-sysext-initrd.service systemd-confext-initrd.service \
+            debug-shell.service emergency.service rescue.service \
+            breakpoint-pre-udev.service breakpoint-pre-basic.service breakpoint-pre-mount.service \
+            breakpoint-pre-switch-root.service; do
     systemctl mask "$unit"
 done
 for unit in $(cat /usr/lib/chutes-build/units.enable 2>/dev/null); do
     systemctl enable "$unit"
 done
 mkdir -p /opt/app
-# root has no password: locked (* or !), never empty.
-case "$(awk -F: '$1 == "root" { print $2 }' /etc/shadow)" in
+# root has no password: locked (* or !), never empty. The field is /etc/passwd's (Ubuntu 26.04's
+# base-passwd writes root:*), or /etc/shadow's when /etc/passwd says x.
+pw=$(awk -F: '$1 == "root" { print $2 }' /etc/passwd)
+[ "$pw" != x ] || pw=$(awk -F: '$1 == "root" { print $2 }' /etc/shadow)
+case "$pw" in
     '*'*|'!'*) ;;
     *) echo "mkosi.postinst: root is not locked" >&2; exit 1 ;;
 esac

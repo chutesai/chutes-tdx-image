@@ -446,12 +446,12 @@
   },
   {
    "id": "I28",
-   "check": "noble's stub (255, vTPM only) installed in the image",
+   "check": "the image's own stub dropped (systemd-boot-efi not installed: the UKI built on another stub)",
    "edits": [
     {
      "file": "mkosi/mkosi.conf",
-     "old": "        linux-image-virtual-hwe-24.04\n",
-     "new": "        linux-image-virtual-hwe-24.04\n        systemd-boot-efi\n"
+     "old": "        systemd-boot-efi\n",
+     "new": ""
     }
    ],
    "test": [
@@ -466,8 +466,8 @@
    "edits": [
     {
      "file": "build/build.sh",
-     "old": "case \"$stub_version\" in 25[6-9]*|2[6-9][0-9]*) ;; *) echo",
-     "new": "case \"$stub_version\" in *) ;; esac; case x in y) echo"
+     "old": "if int(re.match(r\"\\d+\", stub_version).group(0)) < 257:",
+     "new": "if int(re.match(r\"\\d+\", stub_version).group(0)) < 0:"
     }
    ],
    "test": [
@@ -482,8 +482,8 @@
    "edits": [
     {
      "file": "mkosi/mkosi.postinst.chroot",
-     "old": "            debug-shell.service emergency.service rescue.service; do\n    systemctl mask \"$unit\"\n",
-     "new": "            emergency.service rescue.service; do\n    systemctl mask \"$unit\"\n"
+     "old": "            debug-shell.service emergency.service rescue.service \\\n",
+     "new": "            emergency.service rescue.service \\\n"
     }
    ],
    "test": [
@@ -498,8 +498,8 @@
    "edits": [
     {
      "file": "mkosi/mkosi.postinst.chroot",
-     "old": "case \"$(awk -F: '$1 == \"root\" { print $2 }' /etc/shadow)\" in",
-     "new": "case \"x\" in"
+     "old": "case \"$pw\" in\n    '*'*|'!'*) ;;\n",
+     "new": "case \"x\" in\n    '*'*|'!'*) ;;\n"
     }
    ],
    "test": [
@@ -514,8 +514,8 @@
    "edits": [
     {
      "file": "mkosi/mkosi.images/initrd/mkosi.postinst.chroot",
-     "old": "debug-shell.service emergency.service rescue.service; do",
-     "new": "debug-shell.service rescue.service; do"
+     "old": "debug-shell.service emergency.service rescue.service \\\n",
+     "new": "debug-shell.service rescue.service \\\n"
     }
    ],
    "test": [
@@ -610,7 +610,7 @@
    "edits": [
     {
      "file": "build/build.sh",
-     "old": "for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \\\n            debug-shell.service emergency.service rescue.service; do\n    [ \"$(readlink \"$W/initrd-check/etc/systemd/system/$unit\")\" = /dev/null ] || { echo \"the initrd does not mask $unit\" >&2; exit 1; }\ndone\n",
+     "old": "for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \\\n            systemd-sysext-initrd.service systemd-confext-initrd.service \\\n            debug-shell.service emergency.service rescue.service \\\n            breakpoint-pre-udev.service breakpoint-pre-basic.service breakpoint-pre-mount.service \\\n            breakpoint-pre-switch-root.service; do\n    [ \"$(readlink \"$W/initrd-check/etc/systemd/system/$unit\")\" = /dev/null ] || { echo \"the initrd does not mask $unit\" >&2; exit 1; }\ndone\n",
      "new": ""
     }
    ],
@@ -676,6 +676,118 @@
      "file": "keyfetch/cmd/chutes-key-fetch/main.go",
      "old": "\"--key-file\", \"/dev/stdin\", \"--keyfile-size\", \"64\",",
      "new": "\"--key-file\", \"-\","
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I43",
+   "check": "the tools container installs systemd-boot-efi (a stub the UKI could be built on)",
+   "edits": [
+    {
+     "file": "build/Containerfile",
+     "old": "mkosi systemd systemd-repart systemd-ukify erofs-utils",
+     "new": "mkosi systemd systemd-repart systemd-ukify systemd-boot-efi erofs-utils"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I44",
+   "check": "the package sources at another instant than Mirror=",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.sandbox/etc/apt/sources.list.d/mkosi.sources",
+     "old": "URIs: https://snapshot.ubuntu.com/ubuntu/20261122T000000Z\n",
+     "new": "URIs: https://snapshot.ubuntu.com/ubuntu/20261123T000000Z\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I45",
+   "check": "the security pocket dropped from the pinned sources",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.sandbox/etc/apt/sources.list.d/mkosi.sources",
+     "old": "Suites: resolute resolute-updates resolute-security\n",
+     "new": "Suites: resolute resolute-updates\n"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I46",
+   "check": "the initrd does not mask systemd-sysext-initrd (an ESP sysext merged in the initrd)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.images/initrd/mkosi.postinst.chroot",
+     "old": "systemd-sysext-initrd.service ",
+     "new": ""
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I47",
+   "check": "the root does not mask breakpoint-pre-switch-root (a shell)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.postinst.chroot",
+     "old": "\\\n            breakpoint-pre-switch-root.service; do",
+     "new": "; do"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I48",
+   "check": "the build not checking the built initrd's breakpoint-pre-switch-root mask",
+   "edits": [
+    {
+     "file": "build/build.sh",
+     "old": "\\\n            breakpoint-pre-switch-root.service; do\n    [ \"$(readlink",
+     "new": "; do\n    [ \"$(readlink"
+    }
+   ],
+   "test": [
+    "go",
+    "test",
+    "./..."
+   ]
+  },
+  {
+   "id": "I49",
+   "check": "no package manifest (nothing to check the stub's version against)",
+   "edits": [
+    {
+     "file": "mkosi/mkosi.conf",
+     "old": "ManifestFormat=json\n",
+     "new": ""
     }
    ],
    "test": [

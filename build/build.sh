@@ -8,10 +8,10 @@
 # build's key-window inputs: app.key, ca.pem, server_name, tag; read-only), /out (the outputs).
 # SOURCE_DATE_EPOCH fixes every timestamp. Nothing here prints a key.
 #
-# The UKI's stub is this container's systemd-stub (Debian's systemd-boot-efi 257): it measures the
-# UKI's sections, and anything it adds (an addon's or the firmware's command line, ESP sidecars)
-# into the TDX registers as well as the vTPM, and ignores SMBIOS command-line additions in a
-# confidential VM. Noble's own stub (255) measures into the vTPM only.
+# The UKI's stub is the image's own systemd-stub (Ubuntu 26.04's systemd-boot-efi, systemd 259): it
+# measures the UKI's sections, and anything it adds (an addon's or the firmware's command line, ESP
+# sidecars) into the TDX registers as well as the vTPM, and ignores SMBIOS command-line additions in
+# a confidential VM. The build checks the UKI's stub is that package's, at 257 or later.
 set -euo pipefail
 VARIANT=${1:?variant}
 SDE=${SOURCE_DATE_EPOCH:?SOURCE_DATE_EPOCH}
@@ -32,11 +32,6 @@ EXTRA=$W/extra
 BUILD=$EXTRA/usr/lib/chutes-build
 mkdir -p "$EXTRA/usr/local/bin" "$EXTRA/usr/lib/systemd/system" "$BUILD"
 cmdline=""
-# The stub, as its own tree (repart keeps /usr/lib/systemd/boot/ out of the root partition).
-STUB=$W/stub
-install -D -m 0644 /usr/lib/systemd/boot/efi/linuxx64.efi.stub "$STUB/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
-stub_version=$(dpkg-query -W -f='${Version}' systemd-boot-efi)
-case "$stub_version" in 25[6-9]*|2[6-9][0-9]*) ;; *) echo "systemd-stub $stub_version: 256 or later needed" >&2; exit 2 ;; esac
 
 # A deterministic UUID and salt from a label (the same on every builder).
 derive() { printf '%s' "chutes-tdx-image:$VARIANT:$1" | sha256sum | cut -c1-64; }
@@ -106,7 +101,6 @@ ImageId=chutes-tdx-$VARIANT
 
 [Content]
 ExtraTrees=$EXTRA
-ExtraTrees=$STUB
 SourceDateEpoch=$SDE
 EOF
 # Appended to mkosi.conf's command line (an empty KernelCommandLine= would reset it).
@@ -141,16 +135,24 @@ tar --format=oldgnu --sparse --hole-detection=raw --mtime="@$SDE" --owner=0 --gr
     --mode=0644 -C "$W" -cf "$W/disk.tar" disk.raw
 gzip -n -9 -c "$W/disk.tar" > "$OUT/disk.tar.gz"
 cp "$W/mkosi-out/disk.efi" "$OUT/uki.efi"
+# Every package in the image and its version (mkosi's manifest).
+cp "$W/mkosi-out/disk.manifest" "$OUT/manifest.json"
 ( cd "$OUT" && sha256sum disk.tar.gz > disk.tar.gz.sha256 )
 
 # The UKI's measured facts: its command line (the root and app root hashes), its stub, its
 # Authenticode digests, and the sizes. The build fails unless the command line holds every token
-# that closes an unmeasured input, the stub is the container's, and the initrd masks every
-# code-running extension point with root locked.
-python3 - "$OUT" "$app_roothash" "$(stat -c %s "$W/disk.raw")" "$stub_version" \
-    "$(sha256sum /usr/lib/systemd/boot/efi/linuxx64.efi.stub | cut -c1-64)" <<'PY'
+# that closes an unmeasured input, the stub is the image's systemd-boot-efi at 257 or later (the
+# first that measures into the TDX registers), and the initrd masks every code-running extension
+# point with root locked.
+python3 - "$OUT" "$app_roothash" "$(stat -c %s "$W/disk.raw")" <<'PY'
 import json, re, sys, pefile
-out, app_roothash, raw_size, stub_version, stub_sha256 = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+out, app_roothash, raw_size = sys.argv[1], sys.argv[2], int(sys.argv[3])
+packages = {p["name"]: p["version"] for p in json.load(open(out + "/manifest.json"))["packages"]}
+stub_version = packages.get("systemd-boot-efi")
+if not stub_version:
+    sys.exit("the image does not install systemd-boot-efi (the UKI's stub)")
+if int(re.match(r"\d+", stub_version).group(0)) < 257:
+    sys.exit(f"systemd-stub {stub_version}: 257 or later needed")
 pe = pefile.PE(out + "/uki.efi", fast_load=True)
 sections = {s.Name.rstrip(b"\0").decode(): s.get_data()[: s.Misc_VirtualSize] for s in pe.sections}
 cmdline = sections[".cmdline"].rstrip(b"\0").decode()
@@ -161,11 +163,11 @@ for need in ("root=/dev/mapper/root", "rootfstype=erofs", "systemd.gpt_auto=no",
         sys.exit(f"the UKI's command line lacks {need}")
 magic = sections[".sdmagic"].rstrip(b"\0").decode()
 if f"systemd-stub {stub_version} " not in magic:
-    sys.exit(f"the UKI's stub is not the container's {stub_version}: {magic!r}")
+    sys.exit(f"the UKI's stub is not the image's systemd-boot-efi {stub_version}: {magic!r}")
 m = re.search(r"(?:^|\s)roothash=([0-9a-f]{64})(?:\s|$)", cmdline)
 doc = {"schema": "chutes.tdx-image-verity.v1", "cmdline": cmdline, "root_hash": m.group(1) if m else None,
        "app_root_hash": app_roothash or None, "disk_raw_bytes": raw_size, "disk_size_gb": raw_size // 2**30,
-       "systemd_stub": {"package": "systemd-boot-efi", "version": stub_version, "sha256": stub_sha256},
+       "systemd_stub": {"package": "systemd-boot-efi", "version": stub_version},
        "uki_sections": sorted(sections)}
 open(out + "/verity.json", "w").write(json.dumps(doc, indent=1) + "\n")
 PY
@@ -195,13 +197,19 @@ for module in ("kernel/fs/erofs/erofs.ko", "kernel/drivers/md/dm-verity.ko", "ke
     if not any(module in n for n in names):
         sys.exit(f"the UKI's initrd has no {module}")
 PY
-# The initrd mkosi built (mkosi.images/initrd): every mask, and root locked.
-mkdir -p "$W/initrd-check" && (cd "$W/initrd-check" && zstd -dc "$W/mkosi-out/initrd.cpio.zst" | cpio -id --quiet etc/shadow 'etc/systemd/system/*' 2>/dev/null)
+# The initrd mkosi built (mkosi.images/initrd): every mask, and root locked (the password field of
+# etc/passwd, or of etc/shadow when etc/passwd says x).
+mkdir -p "$W/initrd-check" && (cd "$W/initrd-check" && zstd -dc "$W/mkosi-out/initrd.cpio.zst" | cpio -id --quiet etc/passwd etc/shadow 'etc/systemd/system/*' 2>/dev/null)
 for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \
-            debug-shell.service emergency.service rescue.service; do
+            systemd-sysext-initrd.service systemd-confext-initrd.service \
+            debug-shell.service emergency.service rescue.service \
+            breakpoint-pre-udev.service breakpoint-pre-basic.service breakpoint-pre-mount.service \
+            breakpoint-pre-switch-root.service; do
     [ "$(readlink "$W/initrd-check/etc/systemd/system/$unit")" = /dev/null ] || { echo "the initrd does not mask $unit" >&2; exit 1; }
 done
-grep -Eq '^root:[*!]' "$W/initrd-check/etc/shadow" || { echo "the initrd's root is not locked" >&2; exit 1; }
+pw=$(awk -F: '$1 == "root" { print $2 }' "$W/initrd-check/etc/passwd")
+[ "$pw" != x ] || pw=$(awk -F: '$1 == "root" { print $2 }' "$W/initrd-check/etc/shadow" 2>/dev/null)
+case "$pw" in '*'*|'!'*) ;; *) echo "the initrd's root is not locked" >&2; exit 1 ;; esac
 /stage/pehash "$OUT/uki.efi" > "$OUT/uki.efi.authenticode"
 ls -l "$OUT"
 cat "$OUT/disk.tar.gz.sha256" "$OUT/uki.efi.authenticode"

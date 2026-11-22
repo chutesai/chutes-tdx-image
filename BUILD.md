@@ -5,6 +5,9 @@ container), `make`, `git`, any Go 1.21 or later (it downloads the pinned Go 1.27
 access to `proxy.golang.org`, `snapshot.debian.org` and `snapshot.ubuntu.com`, and a checkout of
 `chutesai/chutes-tdx-gate` (`GATE_REPO`, default `../chutes-tdx-gate`).
 
+This builds the Ubuntu 26.04 template; the Ubuntu 24.04 template is on the `ubuntu-24.04` branch,
+with its own BUILD.md.
+
 ## 1. The key-window inputs
 
 For the sample image (testing only), make throwaway inputs:
@@ -34,29 +37,34 @@ make verify-app VARIANT=sample     # the app partition opens as the guest opens 
 2. `make gate`: `tdx-gate` from `GATE_REPO` at `GATE_COMMIT`, built by its own `make build`, which
    must hash to `GATE_SHA256`;
 3. `make tools-image`: `build/Containerfile` (Debian trixie by digest, its packages from
-   `snapshot.debian.org` at 2026-11-15: mkosi 25.3, systemd-repart, ukify and systemd-boot-efi 257,
-   erofs-utils, cryptsetup);
+   `snapshot.debian.org` at 2026-11-15: mkosi 25.3, systemd-repart and ukify 257, erofs-utils,
+   cryptsetup; no systemd-stub);
 4. `build/build.sh VARIANT` in that container: the app filesystem (`mkfs.erofs`, timestamps fixed),
    encrypted by `appseal` under the build's data key (aes-xts-plain64, sector n tweaked by n),
    dm-verity over the ciphertext (`veritysetup format`, salt and UUID derived from the variant), then
-   mkosi (Ubuntu noble from `snapshot.ubuntu.com` at 2026-11-15, `Seed=` fixed,
+   mkosi (Ubuntu 26.04 `resolute` with its updates and security updates, all from
+   `snapshot.ubuntu.com` at 2026-11-22T00:00:00Z: `Mirror=` and
+   `mkosi/mkosi.sandbox/etc/apt/sources.list.d/mkosi.sources`; `Seed=` fixed,
    `SOURCE_DATE_EPOCH=1794700800`; first the initrd, `mkosi/mkosi.images/initrd`, then the image,
-   its UKI on the container's systemd-stub 257), then the disk rounded up to a whole GiB (the GPT's
-   backup header moved to the end) and archived as GCE wants: `tar --format=oldgnu --sparse
+   its UKI on the image's own systemd-stub from `systemd-boot-efi`, systemd 259), then the disk
+   rounded up to a whole GiB (the GPT's backup header moved to the end) and archived as GCE wants:
+   `tar --format=oldgnu --sparse
    --hole-detection=raw` (holes found from the content, not the file system) and `gzip -n -9`. The
    build fails unless the UKI's command line holds every token of README "What is measured", its
-   stub is the container's, and the initrd masks the extension and shell units with root locked.
+   stub is the image's `systemd-boot-efi` at 257 or later (checked against the package manifest),
+   and the initrd masks the extension and shell units with root locked.
 
 Outputs in `out/images/<variant>/`: `disk.tar.gz`, `disk.tar.gz.sha256`, `uki.efi`,
 `uki.efi.authenticode` (its SHA-256 and SHA-384 Authenticode digests), `verity.json` (the command
-line, the root and app root hashes, the raw disk size in GiB, the stub's package version and
-sha256) and, for the sample variants, `app.erofs` (the app filesystem in plaintext, for
-`verify-app`) and `app.meta.json` (the build's `app_context` and `app_kcv`).
+line, the root and app root hashes, the raw disk size in GiB, the stub's package and version),
+`manifest.json` (mkosi's manifest: every package in the image and its version) and, for the sample
+variants, `app.erofs` (the app filesystem in plaintext, for `verify-app`) and `app.meta.json` (the
+build's `app_context` and `app_kcv`).
 
 ## 3. Reproducibility
 
 ```sh
-make repro VARIANT=sample          # two builds from empty work directories: disk.tar.gz, uki.efi, verity.json equal
+make repro VARIANT=sample          # two builds from empty work directories: disk.tar.gz, uki.efi, verity.json, manifest.json equal
 ```
 
 Two builders with the same commit, the same `GATE_COMMIT`, the same key-window inputs and the same
@@ -77,8 +85,9 @@ chutes-tdx-measure write --image-sha256 $(cut -d' ' -f1 out/images/sample/disk.t
 chutes-tdx-measure sign --key key.pem m.json -o m.json.sig
 ```
 
-`predict` models RTMR1 and RTMR2 from your archive. On GCP, RTMR2 holds systemd-stub 257's section
-measurements, which the stub makes through the firmware's CC measurement protocol.
+`predict` models RTMR1 and RTMR2 from your archive. On GCP, RTMR2 holds systemd-stub's section
+measurements (the image's stub, systemd 259), which the stub makes through the firmware's CC
+measurement protocol.
 
 A capture of a test boot (`chutes-tdx-measure capture --nonce <nonce>`, which verifies the quote
 with Intel DCAP and requires it to carry your nonce) confirms the prediction, but it is not a

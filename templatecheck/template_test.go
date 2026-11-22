@@ -57,31 +57,74 @@ func TestCommandLine(t *testing.T) {
 	}
 }
 
-// The UKI's stub is the tools container's systemd-stub (256 or later), never noble's 255.
+// The UKI's stub is the image's own systemd-stub (Ubuntu 26.04's systemd-boot-efi, systemd 259), which
+// measures into the TDX registers; the build checks its version (257 or later) against the UKI's
+// .sdmagic, and the tools container carries no stub the UKI could be built on instead.
 func TestStub(t *testing.T) {
-	if has(setting(read(t, "mkosi", "mkosi.conf"), "Packages"), "systemd-boot-efi") {
-		t.Error("the image installs noble's systemd-boot-efi (stub 255)")
+	if !has(setting(read(t, "mkosi", "mkosi.conf"), "Packages"), "systemd-boot-efi") {
+		t.Error("the image does not install systemd-boot-efi (the UKI's stub)")
 	}
 	build := read(t, "build", "build.sh")
 	for _, want := range []string{
-		`install -D -m 0644 /usr/lib/systemd/boot/efi/linuxx64.efi.stub "$STUB/usr/lib/systemd/boot/efi/linuxx64.efi.stub"`,
-		`case "$stub_version" in 25[6-9]*|2[6-9][0-9]*) ;; *) echo`,
-		"ExtraTrees=$STUB",
+		`stub_version = packages.get("systemd-boot-efi")`,
+		`if int(re.match(r"\d+", stub_version).group(0)) < 257:`,
+		`if f"systemd-stub {stub_version} " not in magic:`,
+		`cp "$W/mkosi-out/disk.manifest" "$OUT/manifest.json"`,
 	} {
 		if !strings.Contains(build, want) {
 			t.Errorf("build.sh lacks %q", want)
 		}
 	}
+	if strings.Contains(build, "ExtraTrees=$STUB") || strings.Contains(build, "/usr/lib/systemd/boot/efi/linuxx64.efi.stub") {
+		t.Error("build.sh puts another stub into the image")
+	}
+	if !has(setting(read(t, "mkosi", "mkosi.conf"), "ManifestFormat"), "json") {
+		t.Error("mkosi.conf does not write the package manifest")
+	}
 	if !has(setting(read(t, "mkosi", "mkosi.repart", "10-root.conf"), "ExcludeFiles"), "/usr/lib/systemd/boot/") {
 		t.Error("the root partition keeps /usr/lib/systemd/boot/")
 	}
-	if !strings.Contains(read(t, "build", "Containerfile"), "systemd-boot-efi") {
-		t.Error("the tools container does not install systemd-boot-efi")
+	if strings.Contains(read(t, "build", "Containerfile"), "systemd-boot-efi") {
+		t.Error("the tools container installs systemd-boot-efi")
+	}
+}
+
+// Every package comes from one snapshot.ubuntu.com instant: the release, its updates and its
+// security updates (mkosi would otherwise take the security pocket from the live archive).
+func TestPackageSources(t *testing.T) {
+	conf := read(t, "mkosi", "mkosi.conf")
+	release, mirror := setting(conf, "Release"), setting(conf, "Mirror")
+	if len(release) != 1 || release[0] != "resolute" {
+		t.Fatalf("mkosi.conf's Release= is %v, not resolute (Ubuntu 26.04)", release)
+	}
+	if len(mirror) != 1 || !regexp.MustCompile(`^https://snapshot\.ubuntu\.com/ubuntu/[0-9]{8}T[0-9]{6}Z$`).MatchString(mirror[0]) {
+		t.Fatalf("mkosi.conf's Mirror= is %v, not one snapshot.ubuntu.com instant", mirror)
+	}
+	sources := read(t, "mkosi", "mkosi.sandbox", "etc", "apt", "sources.list.d", "mkosi.sources")
+	field := func(key string) []string {
+		m := regexp.MustCompile(`(?m)^` + key + `: (.*)$`).FindAllStringSubmatch(sources, -1)
+		if len(m) != 1 {
+			t.Fatalf("mkosi.sources has %d %s: lines", len(m), key)
+		}
+		return strings.Fields(m[0][1])
+	}
+	if uris := field("URIs"); len(uris) != 1 || uris[0] != mirror[0] {
+		t.Errorf("mkosi.sources' URIs %v differ from Mirror= %s", uris, mirror[0])
+	}
+	if suites := strings.Join(field("Suites"), " "); suites != "resolute resolute-updates resolute-security" {
+		t.Errorf("mkosi.sources' suites are %q", suites)
+	}
+	if field("Types")[0] != "deb" || strings.Join(field("Components"), " ") != "main universe" {
+		t.Error("mkosi.sources' types or components changed")
+	}
+	if strings.Join(field("Signed-By"), " ") != "/usr/share/keyrings/ubuntu-archive-keyring.gpg" {
+		t.Error("mkosi.sources is not checked against the Ubuntu archive key")
 	}
 }
 
 var masked = []string{"systemd-sysext.service", "systemd-sysext@.service", "systemd-sysext.socket", "systemd-confext.service",
-	"debug-shell.service", "emergency.service", "rescue.service"}
+	"systemd-sysext-initrd.service", "systemd-confext-initrd.service", "debug-shell.service", "emergency.service", "rescue.service",
+	"breakpoint-pre-udev.service", "breakpoint-pre-basic.service", "breakpoint-pre-mount.service", "breakpoint-pre-switch-root.service"}
 
 // maskList is the units a postinst script's `for unit in ...; do systemctl mask "$unit"; done` masks.
 func maskList(t *testing.T, script string) []string {
@@ -102,8 +145,9 @@ func checkMasksAndRoot(t *testing.T, name, script string) {
 			t.Errorf("%s does not mask %s", name, u)
 		}
 	}
-	if !strings.Contains(script, `case "$(awk -F: '$1 == "root" { print $2 }' /etc/shadow)" in`) ||
-		!strings.Contains(script, `'*'*|'!'*) ;;`) {
+	if !strings.Contains(script, "pw=$(awk -F: '$1 == \"root\" { print $2 }' /etc/passwd)\n"+
+		"[ \"$pw\" != x ] || pw=$(awk -F: '$1 == \"root\" { print $2 }' /etc/shadow)\n"+
+		"case \"$pw\" in\n    '*'*|'!'*) ;;\n") {
 		t.Errorf("%s does not check that root is locked", name)
 	}
 }
@@ -123,6 +167,16 @@ func TestMasks(t *testing.T) {
 	build := read(t, "build", "build.sh")
 	if !strings.Contains(build, `the initrd does not mask $unit`) || !strings.Contains(build, `the initrd's root is not locked`) {
 		t.Error("build.sh does not check the built initrd")
+	}
+	m := regexp.MustCompile(`(?s)for unit in ([^;]*); do\s+\[ "\$\(readlink "\$W/initrd-check/`).FindStringSubmatch(build)
+	if m == nil {
+		t.Fatal("build.sh has no loop over the built initrd's masks")
+	}
+	checked := strings.Fields(strings.ReplaceAll(m[1], "\\", " "))
+	for _, u := range masked {
+		if !has(checked, u) {
+			t.Errorf("build.sh does not check that the built initrd masks %s", u)
+		}
 	}
 }
 

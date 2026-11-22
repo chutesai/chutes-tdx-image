@@ -1,10 +1,15 @@
 # chutes-tdx-image
 
-An image template for Chutes' **bring-your-own Intel TDX VM endpoints**: an Ubuntu 24.04 guest that
-boots directly from one unified kernel image on a GCE `c3` TDX machine, fetches its app key through
-Chutes' key window from **your** key service, unlocks an encrypted and verified app partition, and
-serves through `tdx-gate`. It also holds the reference key service, the VM's key-fetch program, and
-Chutes' sample application used for testing. Build everything yourself (`BUILD.md`).
+An image template for Chutes' **bring-your-own Intel TDX VM endpoints**: an Ubuntu 26.04 LTS guest
+that boots directly from one unified kernel image on a GCE `c3` TDX machine, fetches its app key
+through Chutes' key window from **your** key service, unlocks an encrypted and verified app
+partition, and serves through `tdx-gate`. It also holds the reference key service, the VM's
+key-fetch program, and Chutes' sample application used for testing. Build everything yourself
+(`BUILD.md`).
+
+The same template on Ubuntu 24.04 is on the `ubuntu-24.04` branch. Ubuntu 24.04's own systemd-stub
+(systemd 255) measures only into the vTPM, so that branch boots its UKI on Debian's systemd-stub 257
+from the tools container.
 
 ## Licence
 
@@ -15,12 +20,13 @@ MIT (`LICENSE`).
 | Part | What |
 |---|---|
 | Disk | GPT, a whole number of GiB, GCE's archive format (`disk.tar.gz`: one member `disk.raw`, oldgnu, sparse) |
-| ESP | the UKI as `\EFI\BOOT\BOOTX64.EFI` (systemd-stub 257: kernel, initrd, command line); no shim, no GRUB, no boot entries; Secure Boot off; nothing writes `dbx` or boot variables |
+| ESP | the UKI as `\EFI\BOOT\BOOTX64.EFI` (the image's own systemd-stub, systemd 259: kernel, initrd, command line); no shim, no GRUB, no boot entries; Secure Boot off; nothing writes `dbx` or boot variables |
 | Root | read-only erofs under dm-verity; `roothash=` on the UKI's command line (measured) |
 | App partition | the app filesystem (erofs), encrypted with plain dm-crypt `aes-xts-plain64` under this build's own 512-bit data key (derived from your app key and the app's content), with dm-verity over the **ciphertext**; `chutes.app_roothash=` on the command line |
-| Kernel | Ubuntu 24.04 HWE (`linux-image-virtual-hwe-24.04`, 7.0): `tdx_guest`, `tsm_report` (configfs-tsm), `gve`, `nvme`, dm-verity, dm-crypt, erofs; only these modules (and their dependencies) are in the image |
-| Initrd | mkosi's default initrd for noble, with system and configuration extensions, `debug-shell`, `emergency` and `rescue` masked, and root locked (`mkosi/mkosi.images/initrd`) |
-| Runtime | systemd-networkd DHCP on the gVNIC, timesyncd to 169.254.169.254, an empty `/etc/resolv.conf`, `/tmp` and `/var` in memory, no swap; no Google guest agent, cloud-init, sshd or getty; the same units masked as in the initrd, root locked |
+| Kernel | Ubuntu 26.04 (`linux-image-virtual`, 7.0): `tdx_guest`, `tsm_report` (configfs-tsm), `gve`, `nvme`, dm-verity, dm-crypt, erofs; only these modules (and their dependencies) are in the image |
+| Initrd | mkosi's default initrd for Ubuntu 26.04, with system and configuration extensions (`systemd-sysext-initrd` and `systemd-confext-initrd` included), `debug-shell`, `emergency`, `rescue` and the boot breakpoints (`breakpoint-pre-*`) masked, and root locked (`mkosi/mkosi.images/initrd`) |
+| Packages | Ubuntu 26.04 (`resolute`): the release, its updates and its security updates, all from one `snapshot.ubuntu.com` instant; `manifest.json` lists every package and version in the image |
+| Runtime | systemd 259; systemd-networkd DHCP on the gVNIC, timesyncd to 169.254.169.254, an empty `/etc/resolv.conf`, `/tmp` and `/var` in memory, no swap; no Google guest agent, cloud-init, sshd or getty; the same units masked as in the initrd, root locked |
 
 Command line: `roothash=<hex> console=ttyS0 loglevel=3 root=/dev/mapper/root rootfstype=erofs
 systemd.gpt_auto=no efi=noruntime systemd.import_credentials=no random.trust_bootloader=off
@@ -37,13 +43,13 @@ Every boot input that can run code before the key fetch is therefore either meas
 | The firmware's configuration, Secure Boot variables, `BootOrder` and the `Boot####` it lists (such an entry carrying options changes it) | RTMR0 |
 | The GPT; the UKI's Authenticode (so the stub, kernel, initrd, command line, os-release, uname, sbat); the kernel's Authenticode (systemd-stub hands the kernel to the firmware's LoadImage, which measures it) | RTMR1 |
 | Any other EFI image the firmware loads, such as an ESP addon (`\loader\addons\*.addon.efi`, `BOOTX64.EFI.extra.d\*.addon.efi`) | RTMR1: the firmware measures every PE image it loads through LoadImage, and systemd-stub loads each addon that way. An addon of any kind therefore changes RTMR1, including one carrying only an initrd or microcode, whose payloads the stub measures into the vTPM only |
-| Each UKI section the stub uses (name and content); a command line the stub takes from a boot entry (one outside `BootOrder`, selected by `BootNext`, included: RTMR2 is then its **only** TDX evidence) or an addon; credentials, sysext or confext files the stub packs from the ESP | RTMR2: GCE's TDVF offers the CC measurement protocol, and systemd-stub 257 measures through it as well as into the vTPM. An all-zero RTMR2 is never signable (`predict` does not offer it) |
+| Each UKI section the stub uses (name and content); a command line the stub takes from a boot entry (one outside `BootOrder`, selected by `BootNext`, included: RTMR2 is then its **only** TDX evidence) or an addon; credentials, sysext or confext files the stub packs from the ESP | RTMR2: GCE's TDVF offers the CC measurement protocol, and systemd-stub (257 and later; the image's is 259) measures through it as well as into the vTPM. An all-zero RTMR2 is never signable (`predict` does not offer it) |
 | SMBIOS type-11 strings (`io.systemd.stub.kernel-cmdline-extra`, `io.systemd.credential:*`) | ignored in a confidential VM, by the stub and by PID 1; credential import is off (and the image has no `dmi-sysfs` module to read them) |
-| EFI variables (`SystemdOptions`, `LoaderDevicePartUUID`, ...: host-writable with Secure Boot off) | `efi=noruntime`: Linux reads none; the root is `root=/dev/mapper/root` with `systemd.gpt_auto=no`, never found from them |
+| EFI variables (`SystemdOptions`, `LoaderDevicePartUUID`, `FactoryResetRequest`, ...: host-writable with Secure Boot off) | `efi=noruntime`: Linux reads none; the root is `root=/dev/mapper/root` with `systemd.gpt_auto=no`, never found from them. systemd 259 also no longer reads `SystemdOptions` at all |
 | fw_cfg and command-line credentials | `systemd.import_credentials=no` |
 | The ESP's random seed | mixed in, never credited (`random.trust_bootloader=off`; the CPU's RDRAND is mixed in as well) |
 | System and configuration extensions | masked in the initrd and the root |
-| A shell on the console (`systemd.debug_shell`, emergency or rescue mode) | masked in the initrd and the root; root locked; and asking for one needs a changed, measured, command line |
+| A shell on the console (`systemd.debug_shell`, emergency or rescue mode, `systemd.break=` breakpoints) | masked in the initrd and the root; root locked; and asking for one needs a changed, measured, command line |
 | The root and app partitions | dm-verity, both root hashes on the measured command line |
 | Other attached disks | nothing mounts them (no partition discovery; fstab has tmpfs only) |
 
@@ -120,7 +126,8 @@ health rule and the gate configuration. Everything else is yours to change.
 ```
 mkosi/          the mkosi template: mkosi.conf, mkosi.repart/ (ESP, root and its verity, app and its verity),
                 mkosi.extra/ (networkd, timesyncd, fstab, modules, an empty resolv.conf), mkosi.postinst.chroot,
-                mkosi.images/initrd/ (the initrd: mkosi's default with the masks)
+                mkosi.images/initrd/ (the initrd: mkosi's default with the masks), mkosi.sandbox/ (the package
+                sources, pinned to one snapshot)
 units/          chutes-key-fetch.service, chutes-unlock.service, tdx-gate.service, app.service, chutes-capture.service
 keyfetch/       the VM's side of the key window (cmd/chutes-key-fetch)
 keyservice/     the reference key service (cmd/chutes-key-service)
@@ -128,6 +135,6 @@ sample-app/     the sample app (cmd/sample-app; -tags probe adds /v1/probe) and 
 internal/       configfs-tsm, the metadata server, the key-release protocol, the app partition's key derivation
 tools/          appseal (the app partition's encryption), pehash (Authenticode digests), devkeys (dev inputs)
 build/          the pinned tools container, build.sh (one variant end to end, with its checks), verify-app.sh
-templatecheck/  tests of the template's files: the command line, the stub, the masks, the units
+templatecheck/  tests of the template's files: the command line, the stub, the package sources, the masks, the units
 mutants/        one mutant per check of the key fetch, the key service and the template
 ```
