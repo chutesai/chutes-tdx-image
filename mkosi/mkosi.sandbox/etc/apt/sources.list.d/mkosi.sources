@@ -1,0 +1,8 @@
+# The image's package sources, all at one snapshot.ubuntu.com instant (the same as Mirror= in
+# mkosi.conf). mkosi uses this file in place of the sources it would write, so -security comes from
+# the snapshot too and two builds of a commit install the same packages, whenever they run.
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/20261115T000000Z
+Suites: noble noble-updates noble-security
+Components: main universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg

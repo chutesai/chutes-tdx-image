@@ -1,0 +1,14 @@
+# The image build's tools, pinned: Debian trixie by digest, its packages from snapshot.debian.org
+# at a fixed instant (mkosi 25.3, systemd-repart and systemd-ukify 257, systemd-boot-efi 257 whose
+# stub the UKI is built on, erofs-utils, cryptsetup, ubuntu-keyring). Two builders with this file
+# get the same tool versions.
+FROM debian@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
+ARG DEBIAN_SNAPSHOT=20261115T000000Z
+RUN rm -f /etc/apt/sources.list.d/debian.sources \
+ && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s trixie main\ndeb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/%s trixie-security main\n' "$DEBIAN_SNAPSHOT" "$DEBIAN_SNAPSHOT" > /etc/apt/sources.list \
+ && apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      mkosi systemd systemd-repart systemd-ukify systemd-boot-efi erofs-utils cryptsetup-bin dosfstools mtools \
+      ubuntu-keyring apt dpkg zstd cpio kmod python3 python3-pefile bubblewrap uidmap fdisk \
+      e2fsprogs gzip tar ca-certificates util-linux \
+ && rm -rf /var/lib/apt/lists/*

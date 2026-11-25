@@ -1,0 +1,12 @@
+chutes-tdx-image
+Copyright Chutes Global Corp (https://chutes.ai)
+
+This repository is licensed under the PolyForm Shield License 1.0.0 (LICENSE,
+https://polyformproject.org/licenses/shield/1.0.0), except the third-party code below, which
+keeps its own licence.
+
+vendor/golang.org/x/crypto/
+    golang.org/x/crypto v0.59.0 (https://go.googlesource.com/crypto), copyright The Go Authors.
+    BSD-3-Clause: vendor/golang.org/x/crypto/LICENSE; patent grant: vendor/golang.org/x/crypto/PATENTS.
+
+vendor/modules.txt is the list `go mod vendor` writes for this module.
