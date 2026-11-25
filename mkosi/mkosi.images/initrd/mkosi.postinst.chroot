@@ -1,0 +1,20 @@
+#!/bin/sh
+# The initrd's masks, as the root's (../../mkosi.postinst.chroot): system and configuration
+# extensions (an ESP sidecar would unpack them into /.extra, where systemd-sysext-initrd and
+# systemd-confext-initrd would merge them), debug-shell, emergency, rescue and the boot breakpoints.
+set -eu
+for unit in systemd-sysext.service systemd-sysext@.service systemd-sysext.socket systemd-confext.service \
+            systemd-sysext-initrd.service systemd-confext-initrd.service \
+            debug-shell.service emergency.service rescue.service \
+            breakpoint-pre-udev.service breakpoint-pre-basic.service breakpoint-pre-mount.service \
+            breakpoint-pre-switch-root.service; do
+    systemctl mask "$unit"
+done
+# root has no password: locked (* or !), never empty. The field is /etc/passwd's (Ubuntu 26.04's
+# base-passwd writes root:*), or /etc/shadow's when /etc/passwd says x.
+pw=$(awk -F: '$1 == "root" { print $2 }' /etc/passwd)
+[ "$pw" != x ] || pw=$(awk -F: '$1 == "root" { print $2 }' /etc/shadow)
+case "$pw" in
+    '*'*|'!'*) ;;
+    *) echo "initrd postinst: root is not locked" >&2; exit 1 ;;
+esac

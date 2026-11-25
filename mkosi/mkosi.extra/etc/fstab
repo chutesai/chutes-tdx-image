@@ -1,0 +1,3 @@
+# The root is read-only (erofs, dm-verity); everything writable lives in memory and dies with the VM.
+tmpfs /tmp tmpfs mode=1777,nosuid,nodev,size=25% 0 0
+tmpfs /var tmpfs mode=0755,nosuid,nodev,size=25% 0 0

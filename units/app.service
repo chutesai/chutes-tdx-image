@@ -1,0 +1,20 @@
+[Unit]
+Description=The application (sample-app), from the unlocked app partition, on 127.0.0.1:9000
+Requires=chutes-unlock.service
+After=chutes-unlock.service
+
+[Service]
+Type=exec
+ExecStart=/opt/app/bin/sample-app --listen 127.0.0.1:9000
+DynamicUser=yes
+LimitCORE=0
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

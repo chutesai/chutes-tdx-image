@@ -1,0 +1,12 @@
+[Unit]
+Description=Chutes app partition: mount the verified, decrypted app filesystem read-only
+Requires=chutes-key-fetch.service
+After=chutes-key-fetch.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/mount -t erofs -o ro,nodev,nosuid /dev/mapper/chutes-app /opt/app
+
+[Install]
+WantedBy=multi-user.target

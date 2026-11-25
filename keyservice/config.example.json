@@ -1,0 +1,22 @@
+{
+ "schema": "chutes.reference-key-service-config.v1",
+ "listen": "0.0.0.0:443",
+ "tls_cert": "/etc/chutes-key-service/service.pem",
+ "tls_key": "/etc/chutes-key-service/service.key",
+ "tag": "chutes-tdx-image-keyrelease-ref-v1",
+ "endpoints": ["6b1c0e7e-4d0b-4f2a-9a57-1f3d2c8b9e40"],
+ "key_file": "/etc/chutes-key-service/app.key",
+ "nonce_ttl_s": 60,
+ "verify": {
+  "command": ["chutes-tdx-measure", "verify-quote"],
+  "documents": ["/etc/chutes-key-service/m.json"],
+  "signatures": ["/etc/chutes-key-service/m.json.sig"],
+  "measurement_key": "<the B64 of your 32-byte Ed25519 public key>",
+  "image_sha256": "<the sha256 of your disk.tar.gz>",
+  "machine_type": "c3-standard-4",
+  "gce_project": "<Chutes' customer-VM project number>",
+  "floor": "",
+  "platform": "/etc/chutes-key-service/platform.json",
+  "firmware_dir": "/var/lib/chutes-key-service/firmware"
+ }
+}
